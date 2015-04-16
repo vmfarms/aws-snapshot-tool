@@ -24,6 +24,7 @@ from boto.ec2.connection import EC2Connection
 from boto.ec2.regioninfo import RegionInfo
 import boto.ec2
 import boto.sns
+import boto3
 from datetime import datetime
 import time
 import sys
@@ -181,16 +182,17 @@ for vol in vols:
                     time.sleep(5)
                     current_snap.update(validate=True)
                     print current_snap.status
-                copy_region = vol.tags[copy_tag]
-                dest_region = boto.ec2.get_region(copy_region)
-                dest_conn = EC2Connection(aws_access_key, aws_secret_key, region=dest_region)
-                copied_snap = dest_conn.copy_snapshot(source_region=ec2_region_name, source_snapshot_id=current_snap.id,
-                        description='Copy of: %s' % description)
-                dest_conn.create_tags(copied_snap, {'source_snapshot_id': current_snap.id})
+                copy_to_region = vol.tags[copy_tag]
+                dest_session = boto3.session.Session(aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key, region_name=copy_to_region)
+                dest_conn = dest_session.client('ec2')
+                copied_snap = dest_conn.copy_snapshot(SourceRegion=ec2_region_name, SourceSnapshotId=current_snap.id,
+                        Description='Copy of: %s' % description)
+                dest_conn.create_tags(Resources=[copied_snap['SnapshotId']], Tags=[{'Key': 'source_snapshot_id', 'Value': current_snap.id}])
                 total_copies += 1
             except Exception, e:
                 print "Unexpected error:", sys.exc_info()[0]
                 logging.error(e)
+                count_errors += 1
                 pass
 
         snapshots = vol.snapshots()
