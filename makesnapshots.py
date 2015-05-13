@@ -233,10 +233,18 @@ for vol in vols:
             deletelist[i].delete()
             if dest_conn:
                 logging.info('     Deleting snapshots copies sourced from the original snapshot: ' + deletelist[i].id)
-                copied_vols = dest_conn.get_all_snapshots(owner='self', filters={ 'tag:source_snapshot_id': deletelist[i].id })
-                for copied_vol in copied_vols:
-                    logging.info('     Deleting copied snapshot: ' + copied_vol.id)
-                    copied_vol.delete()
+                copied_vols = dest_conn.describe_snapshots(
+                    OwnerIds=['self'],
+                    Filters = [
+                        {
+                            'Name': 'tag:source_snapshot_id',
+                            'Values': [deletelist[i].id]
+                        },
+                    ]
+                )
+                for copied_vol in copied_vols['Snapshots']:
+                    logging.info('     Deleting copied snapshot: ' + copied_vol['SnapshotId'])
+                    dest_conn.delete_snapshot(SnapshotId=copied_vol['SnapshotId'])
             total_deletes += 1
         time.sleep(3)
     except:
