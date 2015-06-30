@@ -278,3 +278,5 @@ if sns_arn:
 
 logging.info(result)
 
+if count_errors > 0:
+    sys.exit(1)
