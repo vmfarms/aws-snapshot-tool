@@ -30,6 +30,7 @@ import time
 import sys
 import logging
 from config import config
+import traceback
 
 
 if (len(sys.argv) < 2):
@@ -168,7 +169,7 @@ for vol in vols:
             logging.info(suc_message)
             total_creates += 1
         except Exception, e:
-            print "Unexpected error:", sys.exc_info()[0]
+            print "Unexpected error in create:", sys.exc_info()[0]
             logging.error(e)
             pass
 
@@ -190,7 +191,7 @@ for vol in vols:
                 dest_conn.create_tags(Resources=[copied_snap['SnapshotId']], Tags=[{'Key': 'source_snapshot_id', 'Value': current_snap.id}])
                 total_copies += 1
             except Exception, e:
-                print "Unexpected error:", sys.exc_info()[0]
+                print "Unexpected error in copy:", sys.exc_info()[0]
                 logging.error(e)
                 count_errors += 1
                 pass
@@ -246,9 +247,38 @@ for vol in vols:
                     logging.info('     Deleting copied snapshot: ' + copied_vol['SnapshotId'])
                     dest_conn.delete_snapshot(SnapshotId=copied_vol['SnapshotId'])
             total_deletes += 1
+
+        # Iterate through the older backups, check to see if there is a complete copy remotely and then delete the local one
+        for i in range(delta, len(deletelist)):
+            if i < 0:
+                break
+            if dest_conn:
+                copied_snaps_completed = dest_conn.describe_snapshots(
+                    OwnerIds=['self'],
+                    Filters = [
+                        {
+                            'Name': 'tag:source_snapshot_id',
+                            'Values': [deletelist[i].id]
+                        },
+                        {
+                            'Name': 'status',
+                            'Values': ['completed']
+                        },
+                    ]
+                ) 
+                completed_snap_deletelist = []
+                for copied_snap_completed in copied_snaps_completed['Snapshots']:
+                    for tag in copied_snap_completed['Tags']:
+                        if tag['Key'] == 'source_snapshot_id':
+                            completed_snap_deletelist.append(tag['Value'])
+                for local_snap in deletelist:
+                    if local_snap.id in completed_snap_deletelist:
+                        logging.info('     Deleting local snapshot after successful copy: ' + local_snap.id)
+                        local_snap.delete()
         time.sleep(3)
     except:
-        print "Unexpected error:", sys.exc_info()[0]
+        print "Unexpected error in delete:", sys.exc_info()[0]
+        print "Traceback:", traceback.print_exc()
         logging.error('Error in processing volume with id: ' + vol.id)
         errmsg += 'Error in processing volume with id: ' + vol.id
         count_errors += 1
@@ -278,3 +308,5 @@ if sns_arn:
 
 logging.info(result)
 
+if count_errors > 0:
+    sys.exit(1)
