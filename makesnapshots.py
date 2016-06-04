@@ -25,7 +25,8 @@ from boto.ec2.regioninfo import RegionInfo
 import boto.ec2
 import boto.sns
 import boto3
-from datetime import datetime
+from datetime import datetime, timedelta
+import dateutil.tz
 import time
 import sys
 import logging
@@ -275,6 +276,7 @@ for vol in vols:
                     if local_snap.id in completed_snap_deletelist:
                         logging.info('     Deleting local snapshot after successful copy: ' + local_snap.id)
                         local_snap.delete()
+
         time.sleep(3)
     except:
         print "Unexpected error in delete:", sys.exc_info()[0]
@@ -284,6 +286,23 @@ for vol in vols:
         count_errors += 1
     else:
         count_success += 1
+
+    # Enumerate all snapshots older than {keep} {period} in the remote region and delete
+    if period == 'day':
+        older_than = datetime.now(dateutil.tz.tzutc()) - timedelta(days=keep)
+    elif period == 'week':
+        older_than = datetime.now(dateutil.tz.tzutc()) - timedelta(days=keep*7)
+    elif period == 'month':
+        older_than = datetime.now(dateutil.tz.tzutc()) - timedelta(days=keep*30)
+
+    if dest_conn:
+        remote_snapshots = dest_conn.describe_snapshots(
+            OwnerIds=['self'],
+        )
+        for remote_snapshot in remote_snapshots['Snapshots']:
+            if remote_snapshot['StartTime'] < older_than:
+                logging.info('Deleting old remote snapshot: ' + remote_snapshot['SnapshotId'])
+                dest_conn.delete_snapshot(SnapshotId=remote_snapshot['SnapshotId'])
 
 result = '\nFinished making snapshots at %(date)s with %(count_success)s snapshots of %(count_total)s possible.\n\n' % {
     'date': datetime.today().strftime('%d-%m-%Y %H:%M:%S'),
