@@ -249,10 +249,8 @@ for vol in vols:
                     dest_conn.delete_snapshot(SnapshotId=copied_vol['SnapshotId'])
             total_deletes += 1
 
-        # Iterate through the older backups, check to see if there is a complete copy remotely and then delete the local one
-        for i in range(delta, len(deletelist)):
-            if i < 0:
-                break
+        # Iterate through the old local backups, check to see if there is a complete copy remotely and then delete the local one
+        for i in range(len(deletelist)):
             if dest_conn:
                 copied_snaps_completed = dest_conn.describe_snapshots(
                     OwnerIds=['self'],
@@ -270,12 +268,10 @@ for vol in vols:
                 completed_snap_deletelist = []
                 for copied_snap_completed in copied_snaps_completed['Snapshots']:
                     for tag in copied_snap_completed['Tags']:
-                        if tag['Key'] == 'source_snapshot_id':
-                            completed_snap_deletelist.append(tag['Value'])
-                for local_snap in deletelist:
-                    if local_snap.id in completed_snap_deletelist:
-                        logging.info('     Deleting local snapshot after successful copy: ' + local_snap.id)
-                        local_snap.delete()
+                        if tag['Key'] == 'source_snapshot_id' and tag['Value'] == deletelist[i].id \
+                            and copied_snap_completed['StartTime'] < (datetime.now(dateutil.tz.tzutc()) - timedelta(days=1)):
+                            logging.info('     Deleting local snapshot after successful copy: ' + deletelist[i].id)
+                            deletelist[i].delete()
 
         time.sleep(3)
     except:
